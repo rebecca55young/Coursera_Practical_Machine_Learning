@@ -1,0 +1,117 @@
+---
+title: "Practical Machine Learning Project"
+author: "Rebecca Yang"
+date: "9/24/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Data Introduction {.tabset}
+
+The data used for this project comes from a study aiming to measure how well the six participants do weight lifting exercise. Participants were supervised by an experienced weight lifter to make sure the execution complied to the manner they were supposed to simulate. The exercises were performed by six male participants aged between 20-28 years, with little weight lifting experience. 
+
+The outcome of interests is their exercise manner, which is classified to one of five categories: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+
+The outcome variable is "classe" in both training and test dataset.
+
+### Head and Libraries
+
+```{r header}
+# Program name: Practical Machine Learning Project.rmd
+# Analyst:      Rebecca Yang
+# Date:         September 24th, 2019
+# Content:      Pedictive modeling using machine learning algorithm
+# Data Source:  http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har
+
+# Libraries used for analysis
+library(tidyverse) 
+library(caret)
+```
+
+### Data Preparation
+
+Within this data, many variables have excessive amount of missing values. These variables don't provide much information and would increase the model complexity. Therefore, variables with more than 19000 missing values out of 19622 observations are removed from the analysis. Since the outcome is closedly related to time, time variables are removed as well.
+
+The models below focuse on predicting how well a subject conduct the weight lifting exercise given the reads from the sensors they wear at different body parts.
+
+```{r cars}
+training <- read_csv("/Users/yangchenxin/Desktop/pml-training.csv", na=c("NA",""," ",".",""))
+testing <- read_csv("/Users/yangchenxin/Desktop/pml-testing.csv", na=c("NA",""," ","."))
+
+dim(training)
+dim(testing)
+
+# check missing values
+missing_tr <- sapply(training, function(x) sum(is.na(x)))
+missing_te <- sapply(testing, function(x) sum(is.na(x)))
+
+# drop variables with excessive amount of missing: more than 19000 missing values
+exmis <- lapply(missing_tr, function(x) x>=19000)
+drop_names <- which(exmis==TRUE)
+
+train <- training[,-drop_names]
+test <- testing[,-drop_names]
+
+dim(train)
+dim(test)
+
+# examine the new data
+summary(train)
+summary(test)
+
+str(train)
+
+# convert the response to factors and remove time variables and ID
+train <- train %>% 
+  mutate(classe=as_factor(classe)) %>% 
+  select(-c(X1,user_name,raw_timestamp_part_1,raw_timestamp_part_2,cvtd_timestamp,new_window,num_window))
+
+test <- test %>% 
+  select(-c(X1,user_name,raw_timestamp_part_1,raw_timestamp_part_2,cvtd_timestamp,new_window,num_window))
+```
+
+### Modeling
+
+Since the outcome is a factor with 5 levels, it is natural to used tree-based models for higher accuracy. Here both Random Forest and Generalized Boosted Model are fitted and compared. The training set provided are further split into train.1 and validate to evaluate the models. Cross validation is used for parameter tuning. Considering the size of training set, and that Random Forest is computationally burdensome, the number of folders, k, is set to 5.
+
+As a result, the Random Forest model outperformed the Generalized Boosted Model with a higher accuracy of 0.9946. Therefore, use the Random Forest Model to predict the outcomes for the test set. 
+
+```{r models}
+# split the training set into train.1 and validate to evaluate model performance
+set.seed(555)
+index <- createDataPartition(train$classe, p = 0.8, list = FALSE)
+train.1 <- train[index, ]
+validate <- train[-index, ]
+
+# Use cross validation for parameter tuning. 
+# The number of cross-validation is set to 5 for faster computation.
+trControl = trainControl(method = "cv", number = 5, allowParallel = TRUE, verboseIter = FALSE)
+
+# Random Forest model
+model_rf <- train(classe ~ ., method="rf", data = train.1, trControl = trControl)
+
+pre_rf <- predict(model_rf, newdata = validate)
+
+(confusionMatrix(pre_rf, validate$classe))  # Accuracy : 0.9946
+
+# Generalized Boosted Model
+model_gbm <- train(classe ~ ., method="gbm", data = train.1)
+
+pre_gbm <- predict(model_gbm, newdata = validate, trControl = trControl)
+
+(confusionMatrix(pre_gbm, validate$classe)) # Accuracy : 0.963
+```
+
+### Prediction
+
+Using the Random Forest model we chose to predict outcomes for the 20 cases in the test set.
+
+```{r predict}
+test_pre <- predict(model_rf, newdata = test)
+
+# predicted outcome values for the test set
+print(as.data.frame(test_pre))
+```
